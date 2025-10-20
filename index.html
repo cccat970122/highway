@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>系統控制高速公路模擬</title>
+    <style>
+        body { text-align: center; font-family: Arial, sans-serif; }
+        canvas { border: 1px solid #ccc; background: #f0f0f0; }
+        button { margin: 5px; padding: 10px 15px; }
+        #dataDisplay {
+            position: absolute; /* 絕對定位 */
+            top: 50%; /* 垂直居中 */
+            left: 10px; /* 距離左側 10px */
+            transform: translateY(-50%); /* 微調垂直居中 */
+            background: rgba(255, 255, 255, 0.7); /* 半透明背景 */
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: left;
+            font-size: 12px;
+        }
+        #dataDisplay ul {
+            padding-left: 20px;
+        }
+        #highwayCanvas {
+            margin: 0 auto; /* 讓 canvas 在剩餘空間中水平居中 */
+        }
+        canvas { border: 1px solid #ccc; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div id="dataDisplay">
+        <h2>即時數據</h2>
+        <p>碰撞次數: <span id="collisionCount">0</span></p>
+        <p>模擬時間: <span id="simulationTime">0</span> 秒</p>
+        <p>各出口車輛數:</p>
+        <ul id="exitCounts"></ul>
+    </div>
+    
+    <h1>系統控制高速公路模擬</h1>
+    <canvas id="highwayCanvas"></canvas>
+    <br>
+    <button id="startSimulationButton">開始模擬</button>
+    <button id="addCarButton">新增車輛</button>
+
+    <script>
+        const canvas = document.getElementById("highwayCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 200;
+        canvas.height = 800;
+
+        const carBaseSpeed = 2, speedVariationFactor = 1.2;
+        const exits = [160, 320, 480, 640, 800];
+        const carWidth = 20, carHeight = 20, exitDetectDistance = 50, safeGap = 40;
+        
+        const roadColor = "#D3D3D3", laneMarkerColor = "white", exitColor = "red", textColor = "black";
+        const carImage = new Image();
+        carImage.src = "car.png"; 
+
+        let cars = [], simulationStarted = false;
+        let collisionCount = 0;
+        let exitedCars = Array(exits.length).fill(0);
+        let startTime = 0;
+        class Car {
+            constructor(exit, id) {
+                this.x = canvas.width / 2 - 10;
+                this.y = 0;
+                this.speed = carBaseSpeed * (1 + (Math.random() * (speedVariationFactor - 1)));
+                this.exit = exit;
+                this.id = id;
+                this.exiting = false;
+            }
+
+            update() {
+                if (!this.exiting) {
+                    let gap = Math.min(...cars.filter(car => car !== this && !car.exiting && car.y > this.y)
+                        .map(car => car.y - this.y - carHeight), Infinity);
+                    this.speed = gap < safeGap ? Math.min(this.speed, gap / 10) : this.speed;
+                    this.y += this.speed;
+                    if (this.y >= this.exit - exitDetectDistance) this.exiting = true;
+                } else {
+                    this.x -= this.speed;
+                    if (this.x < 0) {
+                        cars = cars.filter(car => car !== this);
+                        exitedCars[this.id - 1]++;
+                    }
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = "#333333";
+                ctx.font = "10px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(`出口 ${this.id}`, this.x + carWidth / 2, this.y - 5);
+                carImage.complete ? ctx.drawImage(carImage, this.x, this.y, carWidth, carHeight) :
+                    ctx.fillRect(this.x, this.y, carWidth, carHeight);
+            }
+        }
+
+        function addCar(exitNumber) {
+            if (exitNumber < 1 || exitNumber > exits.length) return alert("請輸入有效的出口編號 (1-5)");
+            cars.push(new Car(exits[exitNumber - 1], exitNumber));
+        }
+
+        function drawHighway() {
+            ctx.fillStyle = roadColor;
+            ctx.fillRect(canvas.width / 2 - 30, 0, 60, canvas.height);
+            ctx.strokeStyle = laneMarkerColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+
+            ctx.strokeStyle = exitColor;
+            ctx.lineWidth = 3;
+            ctx.font = "12px Arial";
+            ctx.textAlign = "right";
+            exits.forEach((exitY, i) => {
+                ctx.beginPath();
+                ctx.moveTo(canvas.width / 2 - 30, exitY);
+                ctx.lineTo(canvas.width / 2 - 50, exitY + 10);
+                ctx.stroke();
+                ctx.fillStyle = textColor;
+                ctx.fillText(`出口 ${i + 1}`, canvas.width / 2 - 55, exitY + 13);
+            });
+        }
+
+        function updateSimulation() {
+            if (!simulationStarted) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawHighway();
+            cars.forEach(car => (car.update(), car.draw()));
+            requestAnimationFrame(updateSimulation);
+        }
+
+        function startSimulation() {
+            simulationStarted = true;
+            cars = Array.from({ length: 5 }, () => new Car(exits[Math.floor(Math.random() * exits.length)], Math.floor(Math.random() * 5) + 1));
+            updateSimulation();
+            setInterval(() => simulationStarted && addCar(Math.floor(Math.random() * exits.length) + 1), 2000);
+            startTime = performance.now();
+            setInterval(updateStats, 100);
+        }
+
+        function updateStats() {
+            document.getElementById("collisionCount").innerText = collisionCount;
+            document.getElementById("simulationTime").innerText = Math.floor((performance.now() - startTime) / 1000);
+            let exitList = document.getElementById("exitCounts");
+            exitList.innerHTML = exits.map((_, i) => `<li>出口 ${i + 1}: ${exitedCars[i]} 台</li>`).join('');
+        }
+
+        document.getElementById("startSimulationButton").addEventListener("click", startSimulation);
+        document.getElementById("addCarButton").addEventListener("click", () => addCar(parseInt(prompt("請輸入車輛要前往的出口編號 (1-5):"))));
+
+    </script>
+</body>
+</html>
